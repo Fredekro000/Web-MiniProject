@@ -1,1 +1,2 @@
-print("Hellow World!")
+//print("Hellow World!")
+console.log("Hello from Node.js!");
