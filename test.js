@@ -1,3 +1,3 @@
 print("Hellow World!")
 
-print("the earth says hello!")
+console.log("Hello from Node.js!");
