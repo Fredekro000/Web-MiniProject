@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dynamic Bracket Fight</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #1e1e1e;
+      color: #f0f0f0;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+
+    h1 {
+      margin-top: 20px;
+      color: #ffcc00;
+      text-shadow: 1px 1px 2px black;
+    }
+
+    /* Buttons */
+    button, .file-upload {
+      padding: 12px 20px;
+      margin: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      background: linear-gradient(145deg, #444, #222);
+      color: #fff;
+      border: 2px solid #ffcc00;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    button:hover, .file-upload:hover {
+      background: #ffcc00;
+      color: #000;
+      transform: scale(1.05);
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    /* Bracket Layout */
+    .bracket-container {
+      position: relative;
+      overflow-x: auto;
+      padding: 20px;
+    }
+
+    #bracketLines {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .bracket {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 40px;
+      padding: 0 20px;
+      z-index: 1;
+    }
+
+    .round {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-evenly;
+      min-height: 300px;
+      flex: 1;
+      padding: 10px;
+      position: relative;
+    }
+
+    .match {
+      background: #2c2c2c;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+      margin: 6px auto;
+      width: 240px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 5px;
+      height: 100px;
+    }
+
+    .match img {
+      width: 90px;
+      height: 90px;
+      object-fit: cover;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .match img:hover {
+      transform: scale(1.07);
+    }
+
+    .loser {
+      opacity: 0.3;
+      position: relative;
+    }
+
+    .loser::after {
+      content: '❌';
+      position: absolute;
+      color: red;
+      font-size: 40px;
+      top: 25%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    .winner {
+      border: 4px solid #00ff88;
+    }
+
+    /* Winner Modal */
+    #winnerModal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.9);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    #winnerContent {
+      background: #2c2c2c;
+      border: 4px solid #ffcc00;
+      padding: 30px;
+      text-align: center;
+      border-radius: 15px;
+      color: white;
+      animation: popIn 0.4s ease;
+    }
+
+    #winnerContent img {
+      width: 220px;
+      border: 6px solid white;
+      border-radius: 12px;
+      margin: 15px 0;
+    }
+
+    .match-wrapper {
+      position: relative;
+    }
+
+    img[src*="placeholder"] {
+      pointer-events: none;
+      opacity: 0.4;
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0.8); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Dynamic Bracket Fight</h1>
+
+  <form id="uploadForm" enctype="multipart/form-data">
+    <label class="file-upload">
+      Choose Images
+      <input type="file" name="images" id="fileInput" multiple accept="image/*" required>
+    </label>
+    <button type="submit">Upload & Start</button>
+  </form>
+
+  <button id="restartTournament">Restart Tournament</button>
+
+  <div class="bracket-container">
+    <svg id="bracketLines"></svg>
+    <div class="bracket" id="bracket"></div>
+  </div>
+
+  <!-- Champion Popup -->
+  <div id="winnerModal">
+    <div id="winnerContent">
+      <h2>🏆 Tournament Champion 🏆</h2>
+      <img id="winnerImage" src="" alt="Champion">
+      <br>
+      <button onclick="closeWinnerPopup()">Close</button>
+    </div>
+  </div>
+
+  <script>
+    let matchData = [];
+
+    document.getElementById('uploadForm').addEventListener('submit', async e => {
+      e.preventDefault();
+
+      const files = document.getElementById('fileInput').files;
+  
+      // Check if count is power of two
+      const isValid = (files.length & (files.length - 1)) === 0;
+      
+      if (!isValid) {
+        alert('Please upload 2, 4, 8, 16, or 32 images');
+        return;
+      }
+
+      const formData = new FormData(e.target);
+
+      const uploadResponse = await fetch('/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (uploadResponse.ok) {
+        const genResponse = await fetch('/generate-matches', { method: 'POST' });
+        const genResult = await genResponse.json();
+
+        if (genResponse.ok) {
+          matchData = genResult;
+          renderBracket();
+        } else {
+          alert("Bracket generation failed: " + genResult.error);
+        }
+      }
+    });
+
+    document.getElementById('restartTournament').addEventListener('click', async () => {
+      const confirmReset = confirm("Are you sure you want to reset the tournament?");
+      if (!confirmReset) return;
+
+      await fetch('/reset-db', { method: 'POST' });
+      matchData = [];
+      document.getElementById('bracket').innerHTML = '';
+      document.getElementById('bracketLines').innerHTML = '';
+      document.getElementById('winnerModal').style.display = 'none';
+    });
+
+    function renderBracket() {
+      const bracketDiv = document.getElementById('bracket');
+      bracketDiv.innerHTML = '';
+
+      const grouped = {};
+      matchData.forEach(m => {
+        if (!grouped[m.round]) grouped[m.round] = [];
+        grouped[m.round].push(m);
+      });
+
+      const roundOrder = Object.keys(grouped).sort((a, b) => a - b);
+      const roundElements = [];
+
+      roundOrder.forEach((round, roundIndex) => {
+        const roundCol = document.createElement('div');
+        roundCol.className = 'round';
+        const matches = grouped[round];
+        const matchEls = [];
+
+        matches.forEach((match, matchIndex) => {
+          const matchWrapper = document.createElement('div');
+          matchWrapper.className = 'match-wrapper';
+
+          const matchEl = document.createElement('div');
+          matchEl.className = 'match';
+
+          const img1Src = match.img1 ? match.img1.path : 'placeholder.png';
+          const img2Src = match.img2 ? match.img2.path : 'placeholder.png';
+
+          const img1Id = match.img1?._id || '';
+          const img2Id = match.img2?._id || '';
+
+          matchEl.innerHTML = `
+            <img src="${img1Src}" 
+                class="${match.winner && match.winner !== img1Id ? 'loser' : (match.winner === img1Id ? 'winner' : '')}"
+                data-id="${img1Id}" 
+                data-match="${match._id}">
+
+            <img src="${img2Src}" 
+                class="${match.winner && match.winner !== img2Id ? 'loser' : (match.winner === img2Id ? 'winner' : '')}"
+                data-id="${img2Id}" 
+                data-match="${match._id}">
+          `;
+
+
+          matchWrapper.appendChild(matchEl);
+          matchEls.push(matchWrapper);
+          roundCol.appendChild(matchWrapper);
+        });
+
+        roundElements.push({ roundCol, matchEls });
+        bracketDiv.appendChild(roundCol);
+      });
+
+      // Second pass: adjust vertical centering between rounds
+      for (let i = 1; i < roundElements.length; i++) {
+        const prevRound = roundElements[i - 1].matchEls;
+        const thisRound = roundElements[i].matchEls;
+
+        thisRound.forEach((matchWrapper, index) => {
+          const topMatch = prevRound[index * 2];
+          const bottomMatch = prevRound[index * 2 + 1];
+
+          if (!topMatch || !bottomMatch) return;
+
+          const rectTop = topMatch.getBoundingClientRect();
+          const rectBottom = bottomMatch.getBoundingClientRect();
+          const containerRect = bracketDiv.getBoundingClientRect();
+
+          const midY = ((rectTop.top + rectTop.height / 2) + (rectBottom.top + rectBottom.height / 2)) / 2;
+          const offsetY = midY - containerRect.top;
+
+          matchWrapper.style.position = 'absolute';
+          const matchHeight = matchWrapper.offsetHeight;
+          matchWrapper.style.top = `${offsetY - matchHeight / 2}px`;
+        });
+
+        // Convert this round's container to relative positioning so we can position its children
+        roundElements[i].roundCol.style.position = 'relative';
+        roundElements[i].roundCol.style.height = `${bracketDiv.offsetHeight}px`;
+      }
+
+      // Final winner popup
+      const highestRound = Math.max(...roundOrder.map(Number));
+      const finalMatches = grouped[highestRound];
+
+      if (finalMatches.length === 1 && finalMatches[0].winner) {
+        const finalMatch = finalMatches[0];
+        const winnerId = finalMatch.winner.toString();
+        const champ = (finalMatch.img1._id.toString() === winnerId) ? finalMatch.img1 : finalMatch.img2;
+        showWinnerPopup(champ.path);
+      }
+
+      addVotingHandlers();
+      requestAnimationFrame(() => {
+        drawBracketLines();
+      });
+    }
+
+
+    function addVotingHandlers() {
+      document.querySelectorAll('.match img').forEach(img => {
+        const playerId = img.dataset.id;
+        const matchId = img.dataset.match;
+
+        if (!playerId || !matchId) return; // ignore if empty
+
+        img.addEventListener('click', async () => {
+          const res = await fetch(`/vote/${matchId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ winner: playerId })
+          });
+
+          const result = await res.json();
+
+          if (result.champion) {
+            showWinnerPopup(result.champion.path);
+          }
+
+          const updated = await fetch('/matches');
+          const updatedMatches = await updated.json();
+          matchData = updatedMatches;
+          renderBracket();
+        });
+      });
+    }
+
+
+    function drawBracketLines() {
+      const svg = document.getElementById('bracketLines');
+      svg.innerHTML = '';
+
+      const roundCols = Array.from(document.querySelectorAll('.round'));
+      for (let r = 0; r < roundCols.length - 1; r++) {
+        const currMatches = roundCols[r].querySelectorAll('.match');
+        const nextMatches = roundCols[r + 1].querySelectorAll('.match');
+
+        for (let i = 0; i < currMatches.length; i += 2) {
+          const matchA = currMatches[i];
+          const matchB = currMatches[i + 1];
+          const targetMatch = nextMatches[Math.floor(i / 2)];
+
+          if (!matchA || !matchB || !targetMatch) continue;
+
+          const rectA = matchA.getBoundingClientRect();
+          const rectB = matchB.getBoundingClientRect();
+          const rectTarget = targetMatch.getBoundingClientRect();
+          const container = svg.getBoundingClientRect();
+
+          const x1 = rectA.right - container.left;
+          const y1 = rectA.top + rectA.height / 2 - container.top;
+
+          const x2 = rectB.right - container.left;
+          const y2 = rectB.top + rectB.height / 2 - container.top;
+
+          const yMid = (y1 + y2) / 2;
+          const xMid = x1 + 20;
+
+          const xTarget = rectTarget.left - container.left;
+          const yTarget = rectTarget.top + rectTarget.height / 2 - container.top;
+
+          // Horizontal lines from matchA & B
+          svg.innerHTML += `<line x1="${x1}" y1="${y1}" x2="${xMid}" y2="${y1}" stroke="#777" stroke-width="2"/>`;
+          svg.innerHTML += `<line x1="${x2}" y1="${y2}" x2="${xMid}" y2="${y2}" stroke="#777" stroke-width="2"/>`;
+
+          // Vertical join between them
+          svg.innerHTML += `<line x1="${xMid}" y1="${y1}" x2="${xMid}" y2="${y2}" stroke="#777" stroke-width="2"/>`;
+
+          // Connector to center of next match
+          svg.innerHTML += `<line x1="${xMid}" y1="${yMid}" x2="${xTarget}" y2="${yTarget}" stroke="#777" stroke-width="2"/>`;
+        }
+      }
+    }
+
+    function updateNextMatch(currentMatch) {
+      const nextRound = currentMatch.round + 1;
+      const matchIndex = Math.floor(currentMatch.index / 2); // Assuming matches are ordered
+
+      const nextMatch = matchData.find(
+        m => m.round === nextRound && m.index === matchIndex
+      );
+
+      if (nextMatch) {
+        if (currentMatch.index % 2 === 0) {
+          nextMatch.img1 = currentMatch.winner;
+        } else {
+          nextMatch.img2 = currentMatch.winner;
+        }
+      }
+    }
+
+
+    function showWinnerPopup(imgSrc) {
+      document.getElementById('winnerImage').src = imgSrc;
+      document.getElementById('winnerModal').style.display = 'flex';
+    }
+
+    function closeWinnerPopup() {
+      document.getElementById('winnerModal').style.display = 'none';
+    }
+  </script>
+
+</body>
+</html>
